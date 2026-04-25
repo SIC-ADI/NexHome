@@ -1,13 +1,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  NexHome ESP32 — Smart Home Dashboard  v2
-//  UI matches reference image exactly:
-//    ✓ Realistic room illustrations (SVG drawn furniture)
-//    ✓ Realistic humidifier SVG with animated mist
-//    ✓ Humidifier AUTO ON when humidity < 30%
-//    ✓ LEDs toggle via dashboard buttons  (GPIO 26/18/27/25)
-//    ✓ Room cards light up with glow + lamp effect on toggle
-//    ✓ Circular room icons in footer with ON/OFF colour bars
-//    ✓ Live clock, WiFi chip, temp/humidity sensor tiles
+//  NexHome ESP32 — Smart Home Dashboard  v3
+//  Fixes:
+//    ✓ Rooms glow INSTANTLY on toggle (optimistic UI, no waiting for ESP32)
+//    ✓ LED GPIO logic fixed (HIGH = ON, LOW = OFF, active-high LEDs)
+//    ✓ Footer count updates instantly on every toggle
+//    ✓ buildPage() roomSub lambda bug fixed (no repeated replacements)
+//    ✓ Card click + toggle switch both trigger glow + GPIO correctly
+//    ✓ Server-rendered state on page load reflects real GPIO state
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #include <WiFi.h>
@@ -23,13 +22,18 @@ const char* password = "adi321!!";
 DHT dht(DHTPIN, DHTTYPE);
 
 // ── LED GPIO ──────────────────────────────────────────────────────────────────
+// Active-HIGH: digitalWrite HIGH = LED ON, LOW = LED OFF
+// If your LEDs are active-LOW (common anode), swap HIGH/LOW in loop()
 #define PIN_RED    26   // Living Room
 #define PIN_BLUE   18   // Bedroom
 #define PIN_YELLOW 27   // Kitchen
 #define PIN_GREEN  25   // Dining Room
 
 // ── Global State ──────────────────────────────────────────────────────────────
-bool redState = false, blueState = false, yellowState = false, greenState = false;
+bool redState    = false;
+bool blueState   = false;
+bool yellowState = false;
+bool greenState  = false;
 
 WiFiServer server(80);
 
@@ -51,12 +55,9 @@ const char HTML_PAGE[] PROGMEM = R"rawhtml(
   --text:#e4e4f0;--sub:#7070a0;
   --red:#ff3d5a;--blue:#3d9fff;--yellow:#ffcc44;--green:#00d48a;
   --green-acc:#00ffc3;--radius:18px;
-  --rr:255;--rg:61;--rb:90;   /* defaults — overridden per room */
 }
 html,body{height:100%;background:var(--bg);color:var(--text);
   font-family:'Inter',sans-serif;font-size:14px;line-height:1.4}
-
-/* subtle dot-grid */
 body::before{content:'';position:fixed;inset:0;
   background:radial-gradient(rgba(0,255,195,.10) 1px,transparent 1px);
   background-size:30px 30px;pointer-events:none;z-index:0}
@@ -133,7 +134,6 @@ body::before{content:'';position:fixed;inset:0;
   width:70px;height:70px;pointer-events:none}
 .mp{position:absolute;border-radius:50%;opacity:0;
   background:radial-gradient(circle,rgba(180,230,255,.95) 0%,transparent 70%)}
-/* mist only when .humi-on */
 .humi-on .mp:nth-child(1){width:12px;height:12px;left:15%;animation:mp 2.2s ease-in infinite .0s}
 .humi-on .mp:nth-child(2){width:9px; height:9px; left:42%;animation:mp 2.2s ease-in infinite .5s}
 .humi-on .mp:nth-child(3){width:12px;height:12px;left:65%;animation:mp 2.2s ease-in infinite 1.0s}
@@ -171,7 +171,7 @@ body::before{content:'';position:fixed;inset:0;
 
 /* room card base */
 .rc{background:var(--card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:0 0 16px;
+  border-radius:var(--radius);
   position:relative;overflow:hidden;cursor:pointer;
   transition:border-color .35s,box-shadow .35s,background .35s}
 
@@ -181,13 +181,14 @@ body::before{content:'';position:fixed;inset:0;
 .rc.r-yellow{--rc:#ffcc44;--rr:255;--rg:204;--rb:68 }
 .rc.r-green {--rc:#00d48a;--rr:0;  --rg:212;--rb:138}
 
-/* ON state */
+/* ── ON state glow ── */
 .rc.on{
   border-color:var(--rc);
-  background:rgba(var(--rr),var(--rg),var(--rb),.06);
-  box-shadow:0 0 0 1px rgba(var(--rr),var(--rg),var(--rb),.5),
-             0 0 50px rgba(var(--rr),var(--rg),var(--rb),.22),
-             inset 0 0 70px rgba(var(--rr),var(--rg),var(--rb),.07)}
+  background:rgba(var(--rr),var(--rg),var(--rb),.07);
+  box-shadow:
+    0 0 0 1px rgba(var(--rr),var(--rg),var(--rb),.55),
+    0 0 60px rgba(var(--rr),var(--rg),var(--rb),.28),
+    inset 0 0 80px rgba(var(--rr),var(--rg),var(--rb),.09)}
 
 /* corner dot */
 .cdot{position:absolute;top:14px;right:14px;width:10px;height:10px;
@@ -202,61 +203,53 @@ body::before{content:'';position:fixed;inset:0;
   border-bottom:1px solid rgba(var(--rr),var(--rg),var(--rb),.12);
   transition:.35s}
 .rc.on .room-scene{
-  background:rgba(var(--rr),var(--rg),var(--rb),.13);
-  border-bottom-color:rgba(var(--rr),var(--rg),var(--rb),.3)}
+  background:rgba(var(--rr),var(--rg),var(--rb),.18);
+  border-bottom-color:rgba(var(--rr),var(--rg),var(--rb),.4)}
 
 /* pendant */
 .pend{position:absolute;top:0;left:50%;transform:translateX(-50%)}
 .pw{stroke:rgba(var(--rr),var(--rg),var(--rb),.35);stroke-width:2;transition:.3s}
 .ps{fill:rgba(var(--rr),var(--rg),var(--rb),.2);stroke:rgba(var(--rr),var(--rg),var(--rb),.5);transition:.3s}
 .rc.on .pw{stroke:rgba(var(--rr),var(--rg),var(--rb),.95)}
-.rc.on .ps{fill:var(--rc);stroke:var(--rc);filter:drop-shadow(0 0 14px var(--rc))}
+.rc.on .ps{fill:var(--rc);stroke:var(--rc);filter:drop-shadow(0 0 18px var(--rc))}
 
-/* light cone */
+/* light cone — brightens when ON */
 .cone{position:absolute;top:44px;left:50%;transform:translateX(-50%);
   width:0;height:0;
-  border-left:65px solid transparent;border-right:65px solid transparent;
-  border-top:100px solid rgba(var(--rr),var(--rg),var(--rb),0);
+  border-left:75px solid transparent;border-right:75px solid transparent;
+  border-top:110px solid rgba(var(--rr),var(--rg),var(--rb),0);
   transition:.4s;pointer-events:none}
-.rc.on .cone{border-top-color:rgba(var(--rr),var(--rg),var(--rb),.20)}
+.rc.on .cone{border-top-color:rgba(var(--rr),var(--rg),var(--rb),.28)}
 
-/* floor-glow */
+/* floor-glow — strong when ON */
 .fglow{position:absolute;bottom:0;left:50%;transform:translateX(-50%);
-  width:100%;height:40px;
-  background:radial-gradient(ellipse 70% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),0) 0%,transparent 100%);
+  width:100%;height:50px;
+  background:radial-gradient(ellipse 80% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),0) 0%,transparent 100%);
   transition:.4s;pointer-events:none}
-.rc.on .fglow{background:radial-gradient(ellipse 70% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),.28) 0%,transparent 100%)}
+.rc.on .fglow{background:radial-gradient(ellipse 80% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),.38) 0%,transparent 100%)}
 
-/* furniture SVGs — always present, brightness controlled */
-.furn{position:absolute;bottom:0;left:0;width:100%;transition:.4s;
-  filter:saturate(.25) brightness(.45)}
-.rc.on .furn{filter:saturate(1) brightness(1)}
+/* furniture — desaturated when OFF, full colour when ON */
+.furn{position:absolute;bottom:0;left:0;width:100%;transition:.45s;
+  filter:saturate(.18) brightness(.38)}
+.rc.on .furn{filter:saturate(1.1) brightness(1.05)}
 
-/* room info */
-.rinfo{
-  padding:16px;
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-}
-.rc{
-  padding-bottom:20px;
-}
-.rname{font-size:15px;font-weight:700;margin-bottom:3px}
+/* room info row */
+.rinfo{padding:14px 16px 18px;display:flex;justify-content:space-between;align-items:center}
+.rname{font-size:15px;font-weight:700}
 .rstate{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  color:var(--sub);margin-bottom:12px;transition:.3s}
+  color:var(--sub);transition:.3s}
 .rc.on .rstate{color:var(--rc);text-shadow:0 0 10px var(--rc)}
 
-/* toggle */
+/* toggle switch */
 .tgl{position:relative;width:54px;height:28px}
 .tgl input{display:none}
 .sl{position:absolute;inset:0;border-radius:28px;cursor:pointer;
   background:#181828;border:1px solid #30304a;transition:.3s}
 .sl::before{content:'';position:absolute;width:20px;height:20px;top:3px;left:3px;
   border-radius:50%;background:#50507a;transition:.3s}
-.tgl input:checked+.sl{background:rgba(var(--rr),var(--rg),var(--rb),.22);border-color:var(--rc)}
+.tgl input:checked+.sl{background:rgba(var(--rr),var(--rg),var(--rb),.25);border-color:var(--rc)}
 .tgl input:checked+.sl::before{transform:translateX(26px);
-  background:var(--rc);box-shadow:0 0 12px var(--rc)}
+  background:var(--rc);box-shadow:0 0 14px var(--rc),0 0 4px rgba(255,255,255,.4)}
 
 /* ── FOOTER ── */
 .footer-bar{grid-area:footer;
@@ -267,15 +260,13 @@ body::before{content:'';position:fixed;inset:0;
   white-space:nowrap;display:flex;align-items:center;gap:8px}
 .frooms{display:flex;gap:22px;flex:1;flex-wrap:wrap}
 
-/* circular room item */
 .fri{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:90px}
 .fri-circle{width:52px;height:52px;border-radius:50%;border:2px solid var(--border);
   background:var(--card2);display:flex;align-items:center;justify-content:center;
   font-size:22px;transition:.35s;position:relative}
 .fri.on .fri-circle{border-color:var(--rc);
-  background:rgba(var(--rr),var(--rg),var(--rb),.15);
-  box-shadow:0 0 16px rgba(var(--rr),var(--rg),var(--rb),.35)}
-/* per-room tokens on footer items */
+  background:rgba(var(--rr),var(--rg),var(--rb),.18);
+  box-shadow:0 0 18px rgba(var(--rr),var(--rg),var(--rb),.40)}
 .fri.r-red   {--rc:#ff3d5a;--rr:255;--rg:61; --rb:90 }
 .fri.r-blue  {--rc:#3d9fff;--rr:61; --rg:159;--rb:255}
 .fri.r-yellow{--rc:#ffcc44;--rr:255;--rg:204;--rb:68 }
@@ -285,18 +276,28 @@ body::before{content:'';position:fixed;inset:0;
   text-transform:uppercase;color:var(--sub);transition:.3s}
 .fri.on .fri-state{color:var(--rc)}
 .fri-bar{width:52px;height:3px;background:#181828;border-radius:2px;overflow:hidden}
-.fri-bf{height:100%;width:0;background:var(--rc);border-radius:2px;transition:.35s}
+.fri-bf{height:100%;width:0;background:var(--rc);border-radius:2px;transition:.4s}
 .fri.on .fri-bf{width:100%}
+
+/* badge — animates on change */
 .badge{margin-left:auto;background:rgba(0,255,195,.1);
   border:1px solid rgba(0,255,195,.35);border-radius:22px;
-  padding:7px 20px;font-size:14px;font-weight:800;white-space:nowrap}
+  padding:7px 20px;font-size:14px;font-weight:800;white-space:nowrap;
+  transition:transform .15s,box-shadow .3s}
+.badge.bump{transform:scale(1.12);box-shadow:0 0 20px rgba(0,255,195,.5)}
 .badge span{color:var(--green-acc);text-shadow:0 0 10px var(--green-acc)}
+
+/* error toast */
+.toast{position:fixed;bottom:24px;right:24px;z-index:999;
+  background:#2a1020;border:1px solid #ff3d5a;color:#ff8090;
+  border-radius:12px;padding:12px 20px;font-size:13px;font-weight:600;
+  opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
 
 /* responsive */
 @media(max-width:960px){
   .shell{grid-template-areas:"topbar""left""right""footer";
-    grid-template-columns:1fr}
-}
+    grid-template-columns:1fr}}
 @media(max-width:480px){.rooms-grid{grid-template-columns:1fr}}
 </style>
 </head>
@@ -359,40 +360,28 @@ body::before{content:'';position:fixed;inset:0;
       <span class="card-ttl">Humidifier Status</span>
     </div>
     <div class="humi-wrap">
-      <!-- illustration -->
       <div class="humi-left %HUMICLASS%" id="humiLeft">
         <div class="mist-zone" id="mistZone">
           <div class="mp"></div><div class="mp"></div>
           <div class="mp"></div><div class="mp"></div>
         </div>
         <div class="humi-svg-wrap">
-          <!-- realistic humidifier SVG -->
           <svg width="90" height="110" viewBox="0 0 90 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- body -->
             <ellipse cx="45" cy="85" rx="34" ry="20" fill="#1a2535" stroke="#3d9bff33" stroke-width="1"/>
             <path d="M11 68 Q11 48 45 44 Q79 48 79 68 L79 85 Q79 105 45 105 Q11 105 11 85 Z"
                   fill="url(#hbody)" stroke="#3d9bff44" stroke-width="1.5"/>
-            <!-- neck -->
             <rect x="31" y="30" width="28" height="18" rx="8" fill="#1e2e42" stroke="#3d9bff44" stroke-width="1.5"/>
-            <!-- nozzle -->
             <rect x="37" y="18" width="16" height="14" rx="6" fill="#253545" stroke="#4db0ff66" stroke-width="1.5"/>
-            <!-- opening hole -->
             <ellipse cx="45" cy="18" rx="5" ry="3" fill="#0a1520"/>
-            <!-- panel window -->
             <rect x="22" y="56" width="46" height="26" rx="7" fill="#0a1825" stroke="#3d9bff30" stroke-width="1"/>
             <rect x="24" y="58" width="42" height="22" rx="6" fill="#08141e"/>
-            <!-- water level bar -->
             <rect x="26" y="67" width="38" height="10" rx="4" fill="#0e2234"/>
             <rect x="26" y="67" width="26" height="10" rx="4" fill="url(#wlevel)" opacity=".85"/>
-            <!-- buttons row -->
             <circle cx="32" cy="94" r="5.5" fill="#0d1f30" stroke="#3d9bff44" stroke-width="1"/>
             <circle cx="45" cy="94" r="5.5" fill="#3d9bff" opacity=".85"/>
             <circle cx="58" cy="94" r="5.5" fill="#0d1f30" stroke="#3d9bff44" stroke-width="1"/>
-            <!-- button inner glow -->
             <circle cx="45" cy="94" r="3" fill="#80d0ff" opacity=".5"/>
-            <!-- separator lines -->
             <line x1="18" y1="86" x2="72" y2="86" stroke="#3d9bff18" stroke-width="1"/>
-            <!-- gradients -->
             <defs>
               <linearGradient id="hbody" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="#253a52"/>
@@ -406,7 +395,6 @@ body::before{content:'';position:fixed;inset:0;
           </svg>
         </div>
       </div>
-      <!-- info -->
       <div class="humi-right" id="humiRight">
         <div class="hl" id="humiLbl">%HUMILABEL%</div>
         <div class="hd">Humidifier turns ON<br>when humidity &lt; 30%</div>
@@ -428,55 +416,44 @@ body::before{content:'';position:fixed;inset:0;
   <div class="sec-ttl">Rooms &amp; Lighting Control</div>
   <div class="rooms-grid">
 
-    <!-- ── LIVING ROOM (Red) ── -->
+    <!-- ── LIVING ROOM ── -->
     <div class="rc r-red %RED_CLS%" id="card-red" onclick="cardClick('red')">
       <div class="cdot"></div>
       <div class="room-scene">
-        <!-- pendant lamp -->
         <svg class="pend" width="100" height="55" viewBox="0 0 100 55">
           <line class="pw" x1="50" y1="0" x2="50" y2="22"/>
           <path class="ps" d="M30 30 Q50 42 70 30 L65 22 Q50 16 35 22 Z"/>
         </svg>
         <div class="cone"></div>
         <div class="fglow"></div>
-        <!-- Living room SVG furniture -->
         <svg class="furn" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
-          <!-- floor -->
           <rect x="0" y="108" width="320" height="12" fill="#1a0a14" opacity=".8"/>
-          <!-- sofa body -->
           <rect x="60" y="72" width="160" height="36" rx="10" fill="#c0304a"/>
-          <!-- sofa back -->
           <rect x="60" y="50" width="160" height="28" rx="8" fill="#d03858"/>
-          <!-- sofa armrests -->
           <rect x="52" y="60" width="20" height="44" rx="8" fill="#b02840"/>
           <rect x="228" y="60" width="20" height="44" rx="8" fill="#b02840"/>
-          <!-- sofa cushions -->
           <rect x="72" y="55" width="60" height="50" rx="6" fill="#c83050"/>
           <rect x="140" y="55" width="60" height="50" rx="6" fill="#c83050"/>
-          <!-- cushion lines -->
           <line x1="102" y1="60" x2="102" y2="100" stroke="#e04060" stroke-width="1" opacity=".5"/>
           <line x1="170" y1="60" x2="170" y2="100" stroke="#e04060" stroke-width="1" opacity=".5"/>
-          <!-- pillow left -->
           <rect x="78" y="60" width="38" height="22" rx="5" fill="#e05070" opacity=".8"/>
-          <!-- pillow right -->
           <rect x="146" y="60" width="38" height="22" rx="5" fill="#e05070" opacity=".8"/>
-          <!-- plant left -->
           <rect x="18" y="90" width="14" height="18" rx="3" fill="#8B4513"/>
           <ellipse cx="25" cy="85" rx="16" ry="18" fill="#1a6a1a"/>
           <ellipse cx="18" cy="78" rx="10" ry="12" fill="#228822"/>
           <ellipse cx="32" cy="79" rx="9" ry="11" fill="#1a7a1a"/>
-          <!-- side table -->
           <rect x="240" y="82" width="36" height="4" rx="2" fill="#5a3a2a"/>
           <rect x="245" y="86" width="4" height="22" rx="2" fill="#4a2a1a"/>
           <rect x="267" y="86" width="4" height="22" rx="2" fill="#4a2a1a"/>
-          <!-- plant right small -->
           <rect x="248" y="70" width="10" height="14" rx="2" fill="#8B4513"/>
           <ellipse cx="253" cy="66" rx="10" ry="10" fill="#1a7a2a"/>
         </svg>
       </div>
       <div class="rinfo">
-        <div class="rname">Living Room</div>
-        <div class="rstate" id="lbl-red">%RED_LBL%</div>
+        <div>
+          <div class="rname">Living Room</div>
+          <div class="rstate" id="lbl-red">%RED_LBL%</div>
+        </div>
         <label class="tgl" onclick="event.stopPropagation()">
           <input type="checkbox" id="sw-red" %RED_CHK% onchange="ledToggle('red',this.checked)">
           <span class="sl"></span>
@@ -484,7 +461,7 @@ body::before{content:'';position:fixed;inset:0;
       </div>
     </div>
 
-    <!-- ── BEDROOM (Blue) ── -->
+    <!-- ── BEDROOM ── -->
     <div class="rc r-blue %BLUE_CLS%" id="card-blue" onclick="cardClick('blue')">
       <div class="cdot"></div>
       <div class="room-scene">
@@ -494,47 +471,36 @@ body::before{content:'';position:fixed;inset:0;
         </svg>
         <div class="cone"></div>
         <div class="fglow"></div>
-        <!-- Bedroom SVG furniture -->
         <svg class="furn" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
           <rect x="0" y="108" width="320" height="12" fill="#050a18" opacity=".8"/>
-          <!-- bed frame -->
           <rect x="70" y="60" width="180" height="55" rx="6" fill="#1a2a4a"/>
-          <!-- headboard -->
           <rect x="70" y="38" width="180" height="26" rx="8" fill="#223460"/>
-          <!-- mattress -->
           <rect x="76" y="62" width="168" height="48" rx="5" fill="#e8eaf6"/>
-          <!-- duvet -->
           <rect x="76" y="75" width="168" height="35" rx="5" fill="#3d62aa"/>
-          <!-- duvet stripes -->
           <rect x="76" y="82" width="168" height="4" rx="2" fill="#4d72ba" opacity=".6"/>
           <rect x="76" y="92" width="168" height="4" rx="2" fill="#4d72ba" opacity=".6"/>
-          <!-- pillows -->
           <rect x="82" y="62" width="60" height="18" rx="6" fill="#f0f4ff"/>
           <rect x="178" y="62" width="60" height="18" rx="6" fill="#f0f4ff"/>
-          <!-- pillow shading -->
           <rect x="82" y="62" width="60" height="4" rx="3" fill="#d8dcf0" opacity=".5"/>
           <rect x="178" y="62" width="60" height="4" rx="3" fill="#d8dcf0" opacity=".5"/>
-          <!-- nightstand left -->
           <rect x="22" y="78" width="40" height="30" rx="5" fill="#1a2a3a"/>
           <rect x="26" y="82" width="32" height="20" rx="3" fill="#152030"/>
           <circle cx="42" cy="92" r="3" fill="#3d9bff" opacity=".6"/>
-          <!-- lamp on nightstand -->
           <rect x="35" y="60" width="6" height="18" rx="3" fill="#2a3a4a"/>
           <path d="M25 60 Q41 52 57 60 L54 65 Q41 58 28 65 Z" fill="#4d7acc" opacity=".9"/>
-          <!-- nightstand right -->
           <rect x="258" y="78" width="40" height="30" rx="5" fill="#1a2a3a"/>
-          <!-- plant -->
           <rect x="268" y="65" width="8" height="16" rx="2" fill="#2a3a2a"/>
           <ellipse cx="272" cy="62" rx="10" ry="10" fill="#1a6a3a"/>
           <ellipse cx="266" cy="58" rx="7" ry="8" fill="#228844"/>
-          <!-- pencils in cup right nightstand -->
           <rect x="272" y="58" width="3" height="14" rx="1" fill="#ff8833"/>
           <rect x="276" y="56" width="3" height="16" rx="1" fill="#3355ff"/>
         </svg>
       </div>
       <div class="rinfo">
-        <div class="rname">Bedroom</div>
-        <div class="rstate" id="lbl-blue">%BLUE_LBL%</div>
+        <div>
+          <div class="rname">Bedroom</div>
+          <div class="rstate" id="lbl-blue">%BLUE_LBL%</div>
+        </div>
         <label class="tgl" onclick="event.stopPropagation()">
           <input type="checkbox" id="sw-blue" %BLUE_CHK% onchange="ledToggle('blue',this.checked)">
           <span class="sl"></span>
@@ -542,7 +508,7 @@ body::before{content:'';position:fixed;inset:0;
       </div>
     </div>
 
-    <!-- ── KITCHEN (Yellow) ── -->
+    <!-- ── KITCHEN ── -->
     <div class="rc r-yellow %YELLOW_CLS%" id="card-yellow" onclick="cardClick('yellow')">
       <div class="cdot"></div>
       <div class="room-scene">
@@ -552,46 +518,39 @@ body::before{content:'';position:fixed;inset:0;
         </svg>
         <div class="cone"></div>
         <div class="fglow"></div>
-        <!-- Kitchen SVG furniture -->
         <svg class="furn" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
           <rect x="0" y="108" width="320" height="12" fill="#180e00" opacity=".8"/>
-          <!-- counter top -->
           <rect x="10" y="66" width="240" height="8" rx="3" fill="#555560"/>
-          <!-- cabinet lower left -->
           <rect x="10" y="74" width="70" height="36" rx="4" fill="#3a3a45"/>
           <line x1="45" y1="74" x2="45" y2="110" stroke="#50505a" stroke-width="1"/>
           <circle cx="38" cy="92" r="3" fill="#888890"/>
           <circle cx="52" cy="92" r="3" fill="#888890"/>
-          <!-- microwave -->
           <rect x="88" y="68" width="70" height="42" rx="5" fill="#2a2a35"/>
           <rect x="90" y="70" width="50" height="36" rx="3" fill="#181822"/>
           <rect x="145" y="70" width="11" height="36" rx="2" fill="#333340"/>
-          <!-- microwave display -->
           <rect x="92" y="76" width="46" height="14" rx="2" fill="#0a1a0a"/>
           <rect x="94" y="78" width="22" height="10" rx="1" fill="#002200"/>
-          <!-- microwave buttons -->
           <circle cx="150" cy="78" r="3" fill="#555560"/>
           <circle cx="150" cy="86" r="3" fill="#555560"/>
           <circle cx="150" cy="94" r="3" fill="#cc4400"/>
-          <!-- refrigerator right -->
           <rect x="168" y="30" width="78" height="80" rx="6" fill="#2e2e3a"/>
           <rect x="170" y="32" width="74" height="37" rx="4" fill="#252530"/>
           <rect x="170" y="71" width="74" height="37" rx="4" fill="#252530"/>
           <rect x="232" y="48" width="5" height="8" rx="2" fill="#888890"/>
           <rect x="232" y="80" width="5" height="8" rx="2" fill="#888890"/>
-          <!-- plant on counter -->
           <rect x="52" y="52" width="10" height="16" rx="3" fill="#4a3010"/>
           <ellipse cx="57" cy="48" rx="12" ry="12" fill="#2a6a2a"/>
           <ellipse cx="50" cy="44" rx="8" ry="9" fill="#338833"/>
           <ellipse cx="65" cy="45" rx="7" ry="8" fill="#2a7a2a"/>
-          <!-- bottles on counter -->
           <rect x="26" y="52" width="7" height="16" rx="3" fill="#1a6a3a"/>
           <rect x="34" y="54" width="6" height="14" rx="3" fill="#8B3a00"/>
         </svg>
       </div>
       <div class="rinfo">
-        <div class="rname">Kitchen</div>
-        <div class="rstate" id="lbl-yellow">%YELLOW_LBL%</div>
+        <div>
+          <div class="rname">Kitchen</div>
+          <div class="rstate" id="lbl-yellow">%YELLOW_LBL%</div>
+        </div>
         <label class="tgl" onclick="event.stopPropagation()">
           <input type="checkbox" id="sw-yellow" %YELLOW_CHK% onchange="ledToggle('yellow',this.checked)">
           <span class="sl"></span>
@@ -599,7 +558,7 @@ body::before{content:'';position:fixed;inset:0;
       </div>
     </div>
 
-    <!-- ── DINING ROOM (Green) ── -->
+    <!-- ── DINING ROOM ── -->
     <div class="rc r-green %GREEN_CLS%" id="card-green" onclick="cardClick('green')">
       <div class="cdot"></div>
       <div class="room-scene">
@@ -609,42 +568,35 @@ body::before{content:'';position:fixed;inset:0;
         </svg>
         <div class="cone"></div>
         <div class="fglow"></div>
-        <!-- Dining room SVG furniture -->
         <svg class="furn" viewBox="0 0 320 120" xmlns="http://www.w3.org/2000/svg">
           <rect x="0" y="108" width="320" height="12" fill="#051408" opacity=".8"/>
-          <!-- dining table top -->
           <rect x="85" y="68" width="150" height="10" rx="4" fill="#7a5a3a"/>
-          <!-- table leg left -->
           <rect x="90" y="78" width="6" height="30" rx="3" fill="#6a4a2a"/>
-          <!-- table leg right -->
           <rect x="224" y="78" width="6" height="30" rx="3" fill="#6a4a2a"/>
-          <!-- chair left (facing right) -->
           <rect x="44" y="72" width="30" height="26" rx="5" fill="#5a4020"/>
           <rect x="44" y="52" width="30" height="24" rx="5" fill="#6a5030"/>
           <rect x="46" y="98" width="6" height="10" rx="3" fill="#4a3010"/>
           <rect x="62" y="98" width="6" height="10" rx="3" fill="#4a3010"/>
-          <!-- chair right (facing left) -->
           <rect x="246" y="72" width="30" height="26" rx="5" fill="#5a4020"/>
           <rect x="246" y="52" width="30" height="24" rx="5" fill="#6a5030"/>
           <rect x="248" y="98" width="6" height="10" rx="3" fill="#4a3010"/>
           <rect x="264" y="98" width="6" height="10" rx="3" fill="#4a3010"/>
-          <!-- plate on table -->
           <ellipse cx="160" cy="73" rx="18" ry="5" fill="#e8e8e0" opacity=".7"/>
           <ellipse cx="160" cy="73" rx="12" ry="3.5" fill="#d0d0c8" opacity=".5"/>
-          <!-- plant in corner -->
           <rect x="270" y="80" width="12" height="28" rx="4" fill="#4a3010"/>
           <ellipse cx="276" cy="74" rx="18" ry="20" fill="#1a6a2a"/>
           <ellipse cx="266" cy="68" rx="12" ry="14" fill="#228833"/>
           <ellipse cx="286" cy="70" rx="11" ry="13" fill="#1a7a2a"/>
-          <!-- picture frame on wall -->
           <rect x="16" y="30" width="44" height="34" rx="4" fill="#2a2a30" stroke="#3a3a40" stroke-width="1"/>
           <rect x="19" y="33" width="38" height="28" rx="2" fill="#181820"/>
           <ellipse cx="38" cy="47" rx="12" ry="8" fill="#1a1a28" opacity=".8"/>
         </svg>
       </div>
       <div class="rinfo">
-        <div class="rname">Dining Room</div>
-        <div class="rstate" id="lbl-green">%GREEN_LBL%</div>
+        <div>
+          <div class="rname">Dining Room</div>
+          <div class="rstate" id="lbl-green">%GREEN_LBL%</div>
+        </div>
         <label class="tgl" onclick="event.stopPropagation()">
           <input type="checkbox" id="sw-green" %GREEN_CHK% onchange="ledToggle('green',this.checked)">
           <span class="sl"></span>
@@ -690,14 +642,17 @@ body::before{content:'';position:fixed;inset:0;
       </div>
 
     </div>
-    <div class="badge"><span id="cnt">0</span> / 4 ON</div>
+    <div class="badge" id="badge"><span id="cnt">0</span> / 4 ON</div>
   </div>
 </div>
 
 </div><!-- /shell -->
 
+<!-- error toast -->
+<div class="toast" id="toast">⚠️ ESP32 not responding</div>
+
 <script>
-/* ── Clock ─────────────────────────────────────────── */
+/* ── Clock ── */
 (function tick(){
   var d=new Date(),z=function(n){return String(n).padStart(2,'0')};
   document.getElementById('clk').textContent=
@@ -705,16 +660,29 @@ body::before{content:'';position:fixed;inset:0;
   setTimeout(tick,1000);
 })();
 
-/* ── Count active rooms ─────────────────────────────── */
+/* ── Show error toast ── */
+function showToast(){
+  var t=document.getElementById('toast');
+  t.classList.add('show');
+  setTimeout(function(){t.classList.remove('show')},3000);
+}
+
+/* ── Update badge count with bump animation ── */
 function updateCount(){
   var n=0;
   ['red','blue','yellow','green'].forEach(function(c){
     if(document.getElementById('card-'+c).classList.contains('on')) n++;
   });
+  var badge=document.getElementById('badge');
   document.getElementById('cnt').textContent=n;
+  // bump animation
+  badge.classList.remove('bump');
+  void badge.offsetWidth; // reflow
+  badge.classList.add('bump');
+  setTimeout(function(){badge.classList.remove('bump')},200);
 }
 
-/* ── Apply UI for a room ────────────────────────────── */
+/* ── Apply UI changes immediately (optimistic update) ── */
 function applyRoom(color,on){
   var card=document.getElementById('card-'+color);
   var lbl =document.getElementById('lbl-'+color);
@@ -734,50 +702,76 @@ function applyRoom(color,on){
   updateCount();
 }
 
-/* ── Card area click ────────────────────────────────── */
+/* ── Card click toggles the switch ── */
 function cardClick(color){
   var sw=document.getElementById('sw-'+color);
   sw.checked=!sw.checked;
   ledToggle(color,sw.checked);
 }
 
-/* ── LED toggle → XHR to ESP32 ─────────────────────── */
+/* ── LED toggle: update UI instantly, then fire XHR to ESP32 ── */
 function ledToggle(color,on){
+  // 1. Apply UI change IMMEDIATELY — no waiting for server
+  applyRoom(color,on);
+
+  // 2. Fire async request to ESP32
   var x=new XMLHttpRequest();
   x.open('GET','/'+color+'/'+(on?'on':'off'),true);
+  x.timeout=5000;
 
-  x.onload = function(){
-    if(x.status === 204){
-      applyRoom(color,on);
+  x.onload=function(){
+    if(x.status!==204){
+      // Server returned unexpected status — revert UI
+      applyRoom(color,!on);
+      document.getElementById('sw-'+color).checked=!on;
+      showToast();
     }
   };
 
-  x.onerror = function(){
-    alert("ESP32 not responding");
+  x.onerror=function(){
+    // Network error — revert UI
+    applyRoom(color,!on);
+    document.getElementById('sw-'+color).checked=!on;
+    showToast();
+  };
+
+  x.ontimeout=function(){
+    applyRoom(color,!on);
+    document.getElementById('sw-'+color).checked=!on;
+    showToast();
   };
 
   x.send();
 }
 
-/* ── Humidifier toggle ──────────────────────────────── */
+/* ── Humidifier toggle ── */
 function humiToggle(on){
   var l=document.getElementById('humiLeft');
   var lbl=document.getElementById('humiLbl');
+  var mist=document.getElementById('mistZone');
   l.className='humi-left '+(on?'humi-on':'humi-off');
-  document.getElementById('mistZone').style.display=on?'':'none';
+  mist.style.display=on?'':'none';
   lbl.textContent=on?'Auto Mode':'Standby';
   lbl.style.color=on?'':'var(--sub)';
   var x=new XMLHttpRequest();
   x.open('GET','/humi/'+(on?'on':'off'),true);
-  x.timeout=5000;x.send();
+  x.timeout=5000;
+  x.send();
 }
 
-/* ── Init from server-rendered state ───────────────── */
+/* ── Init from server-rendered state ── */
 (function init(){
   ['red','blue','yellow','green'].forEach(function(c){
-    if(document.getElementById('card-'+c).classList.contains('on')){
-      document.getElementById('fr-'+c).classList.add('on');
-      document.getElementById('frs-'+c).textContent='ON';
+    var card=document.getElementById('card-'+c);
+    var fri =document.getElementById('fr-'+c);
+    var frs =document.getElementById('frs-'+c);
+    var lbl =document.getElementById('lbl-'+c);
+    if(card.classList.contains('on')){
+      fri.classList.add('on');
+      frs.textContent='ON';
+      lbl.textContent='LIGHT ON';
+    }else{
+      lbl.textContent='LIGHT OFF';
     }
   });
   // humidifier init
@@ -793,13 +787,10 @@ function humiToggle(on){
 )rawhtml";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  buildPage()
+//  buildPage()  — Fixed: each placeholder replaced exactly once
 // ═══════════════════════════════════════════════════════════════════════════════
 String buildPage(float temp, float hum) {
-  // Temperature bar: 0–50 °C → 0–100 %
   int tPct = (int)constrain(map((long)temp, 0, 50, 0, 100), 0, 100);
-
-  // ✅ Humidifier logic: AUTO ON when hum < 30
   bool humiOn = (hum < 30.0f);
 
   String page = String(HTML_PAGE);
@@ -811,31 +802,22 @@ String buildPage(float temp, float hum) {
   page.replace("%HUMICHK%",   humiOn ? "checked"   : "");
   page.replace("%HUMICLASS%", humiOn ? "humi-on"   : "humi-off");
 
-  // Helper: per-room substitutions
-  auto roomSub = [&](const String& col, bool on) {
-    String U = col; 
-    U.toUpperCase();
-    page.replace("%RED_CLS%",    redState    ? "on" : "");
-page.replace("%RED_LBL%",    redState    ? "LIGHT ON" : "LIGHT OFF");
-page.replace("%RED_CHK%",    redState    ? "checked" : "");
+  // Each room — replaced independently, no lambda loop bug
+  page.replace("%RED_CLS%",    redState    ? "on" : "");
+  page.replace("%RED_LBL%",    redState    ? "LIGHT ON" : "LIGHT OFF");
+  page.replace("%RED_CHK%",    redState    ? "checked"  : "");
 
-page.replace("%BLUE_CLS%",   blueState   ? "on" : "");
-page.replace("%BLUE_LBL%",   blueState   ? "LIGHT ON" : "LIGHT OFF");
-page.replace("%BLUE_CHK%",   blueState   ? "checked" : "");
+  page.replace("%BLUE_CLS%",   blueState   ? "on" : "");
+  page.replace("%BLUE_LBL%",   blueState   ? "LIGHT ON" : "LIGHT OFF");
+  page.replace("%BLUE_CHK%",   blueState   ? "checked"  : "");
 
-page.replace("%YELLOW_CLS%", yellowState ? "on" : "");
-page.replace("%YELLOW_LBL%", yellowState ? "LIGHT ON" : "LIGHT OFF");
-page.replace("%YELLOW_CHK%", yellowState ? "checked" : "");
+  page.replace("%YELLOW_CLS%", yellowState ? "on" : "");
+  page.replace("%YELLOW_LBL%", yellowState ? "LIGHT ON" : "LIGHT OFF");
+  page.replace("%YELLOW_CHK%", yellowState ? "checked"  : "");
 
-page.replace("%GREEN_CLS%",  greenState  ? "on" : "");
-page.replace("%GREEN_LBL%",  greenState  ? "LIGHT ON" : "LIGHT OFF");
-page.replace("%GREEN_CHK%",  greenState  ? "checked" : "");
-  };
-
-  roomSub("RED",    redState);
-  roomSub("BLUE",   blueState);
-  roomSub("YELLOW", yellowState);
-  roomSub("GREEN",  greenState);
+  page.replace("%GREEN_CLS%",  greenState  ? "on" : "");
+  page.replace("%GREEN_LBL%",  greenState  ? "LIGHT ON" : "LIGHT OFF");
+  page.replace("%GREEN_CHK%",  greenState  ? "checked"  : "");
 
   return page;
 }
@@ -851,11 +833,11 @@ void setup() {
   pinMode(PIN_YELLOW, OUTPUT);
   pinMode(PIN_GREEN,  OUTPUT);
 
-  // LEDs off on boot
-digitalWrite(PIN_RED,    redState    ? LOW : HIGH);
-digitalWrite(PIN_BLUE,   blueState   ? LOW : HIGH);
-digitalWrite(PIN_YELLOW, yellowState ? LOW : HIGH);
-digitalWrite(PIN_GREEN,  greenState  ? LOW : HIGH);
+  // All LEDs OFF on boot (active-HIGH: LOW = off)
+  digitalWrite(PIN_RED,    LOW);
+  digitalWrite(PIN_BLUE,   LOW);
+  digitalWrite(PIN_YELLOW, LOW);
+  digitalWrite(PIN_GREEN,  LOW);
 
   dht.begin();
 
@@ -891,7 +873,7 @@ void loop() {
   String line = req.substring(0, req.indexOf('\n'));
   Serial.println("REQ: " + line);
 
-  // ── LED Commands ─────────────────────────────────────────────────────────
+  // ── LED Commands (active-HIGH: HIGH = LED on, LOW = LED off) ─────────────
   if (line.indexOf("/red/on")     != -1) { redState    = true;  digitalWrite(PIN_RED,    HIGH); }
   if (line.indexOf("/red/off")    != -1) { redState    = false; digitalWrite(PIN_RED,    LOW);  }
   if (line.indexOf("/blue/on")    != -1) { blueState   = true;  digitalWrite(PIN_BLUE,   HIGH); }
@@ -900,7 +882,7 @@ void loop() {
   if (line.indexOf("/yellow/off") != -1) { yellowState = false; digitalWrite(PIN_YELLOW, LOW);  }
   if (line.indexOf("/green/on")   != -1) { greenState  = true;  digitalWrite(PIN_GREEN,  HIGH); }
   if (line.indexOf("/green/off")  != -1) { greenState  = false; digitalWrite(PIN_GREEN,  LOW);  }
-  // /humi/ endpoints: humidifier is auto-controlled by firmware; no GPIO needed unless relay added
+  // /humi/ endpoints: acknowledged, no relay GPIO in this build
 
   // ── Read DHT ─────────────────────────────────────────────────────────────
   float temp = dht.readTemperature();
@@ -918,12 +900,12 @@ void loop() {
   );
 
   if (isApiCall && line.indexOf("GET / ") == -1) {
-    // XHR toggle — no body needed
+    // XHR toggle — 204 No Content tells JS the command succeeded
     client.println("HTTP/1.1 204 No Content");
     client.println("Connection: close");
     client.println();
   } else {
-    // Full page
+    // Full page load
     String html = buildPage(temp, hum);
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: text/html; charset=utf-8");
