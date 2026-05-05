@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0b12;--card:#12121e;--card2:#0e0e1a;--border:#1c1c2e;
+  --text:#e4e4f0;--sub:#7070a0;
+  --red:#ff3d5a;--blue:#3d9fff;--yellow:#ffcc44;--green:#00d48a;
+  --green-acc:#00ffc3;--radius:18px;
+}
+html,body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;line-height:1.4}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(rgba(0,255,195,.10) 1px,transparent 1px);background-size:30px 30px;pointer-events:none;z-index:0}
+.shell{position:relative;z-index:1;display:grid;grid-template-areas:"topbar topbar" "left right" "footer footer";grid-template-columns:340px 1fr;grid-template-rows:auto 1fr auto;gap:12px;padding:14px;min-height:100vh;max-width:1200px;margin:0 auto}
+.top-bar{grid-area:topbar;display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 20px}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-box{width:36px;height:36px;border-radius:12px;background:linear-gradient(135deg,#2266ff,#00ffc3);display:flex;align-items:center;justify-content:center;font-size:17px}
+.logo-text{font-size:20px;font-weight:800;letter-spacing:2px;color:#fff}
+.logo-text span{color:var(--green-acc)}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.chip{display:flex;align-items:center;gap:7px;border-radius:30px;padding:6px 14px;font-size:12px;font-weight:600;border:1px solid}
+.chip-wifi{background:#0d1f0d;border-color:#1a3a1a;color:#c0f0c0}
+.chip-time{background:var(--card2);border-color:var(--border);color:var(--text);font-size:13px}
+.wifi-led{width:8px;height:8px;border-radius:50%;background:#00d48a;box-shadow:0 0 8px #00d48a;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.left-col{grid-area:left;display:flex;flex-direction:column;gap:12px}
+.right-col{grid-area:right;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.card-hdr{display:flex;align-items:center;gap:9px;margin-bottom:16px}
+.card-ico{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;background:rgba(0,212,138,.14);border:1px solid rgba(0,212,138,.3)}
+.card-ttl{font-size:14px;font-weight:700;color:#d0d0e8}
+.sensor-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.stile{background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:16px 12px;text-align:center}
+.stile .ico{font-size:30px;display:block;margin-bottom:5px}
+.stile .lbl{font-size:10px;font-weight:700;letter-spacing:2px;color:var(--sub);text-transform:uppercase;margin-bottom:5px}
+.stile .val{font-size:28px;font-weight:800;line-height:1}
+.stile .unit{font-size:14px;font-weight:500}
+.stile.temp .val{color:#ff4466}
+.stile.hum .val{color:#3d9fff}
+.brow{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.blbl{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--sub)}
+.bval{font-size:10px;font-weight:700}
+.btrack{height:5px;background:#181828;border-radius:4px;overflow:hidden;margin-bottom:10px}
+.bfill{height:100%;border-radius:4px;transition:width .6s}
+.bfill.t{background:linear-gradient(90deg,#ff6030,#ff3d5a)}
+.bfill.h{background:linear-gradient(90deg,#3d9fff,#00ffc3)}
+.humi-wrap{display:flex;align-items:center;gap:16px}
+.humi-left{position:relative;flex:0 0 90px;height:110px;display:flex;align-items:flex-end;justify-content:center}
+.mist-zone{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);width:60px;height:60px;pointer-events:none}
+.mp{position:absolute;border-radius:50%;opacity:0;background:radial-gradient(circle,rgba(180,230,255,.95) 0%,transparent 70%)}
+.humi-on .mp:nth-child(1){width:11px;height:11px;left:15%;animation:mp 2.2s ease-in infinite .0s}
+.humi-on .mp:nth-child(2){width:8px;height:8px;left:42%;animation:mp 2.2s ease-in infinite .5s}
+.humi-on .mp:nth-child(3){width:11px;height:11px;left:65%;animation:mp 2.2s ease-in infinite 1.0s}
+.humi-on .mp:nth-child(4){width:7px;height:7px;left:30%;animation:mp 2.2s ease-in infinite 1.6s}
+@keyframes mp{0%{transform:translateY(0) scale(1);opacity:0}15%{opacity:.9}80%{opacity:.35}100%{transform:translateY(-55px) scale(2.2);opacity:0}}
+.humi-svg-wrap{position:relative;z-index:1;transition:.3s}
+.humi-on .humi-svg-wrap{filter:drop-shadow(0 0 14px rgba(100,200,255,.7))}
+.humi-off .humi-svg-wrap{filter:brightness(.38) saturate(.15)}
+.humi-right .hl{font-size:13px;font-weight:700;color:var(--green-acc);margin-bottom:4px}
+.humi-off .humi-right .hl{color:var(--sub)}
+.humi-right .hd{font-size:11px;color:var(--sub);line-height:1.6;margin-bottom:12px}
+.tsm{position:relative;width:48px;height:25px;flex-shrink:0}
+.tsm input{display:none}
+.slsm{position:absolute;inset:0;border-radius:25px;cursor:pointer;background:#181828;border:1px solid #30304a;transition:.3s}
+.slsm::before{content:'';position:absolute;width:19px;height:19px;top:2px;left:2px;border-radius:50%;background:#50507a;transition:.3s}
+.tsm input:checked+.slsm{background:rgba(0,212,138,.28);border-color:var(--green-acc)}
+.tsm input:checked+.slsm::before{transform:translateX(23px);background:var(--green-acc)}
+.row-c{display:flex;align-items:center;gap:10px}
+.tlbl{font-size:12px;font-weight:600;color:var(--sub)}
+.sec-ttl{font-size:13px;font-weight:700;letter-spacing:1px;color:#c8c8e0;display:flex;align-items:center;gap:9px}
+.sec-ttl::before{content:'';width:4px;height:18px;border-radius:2px;background:var(--green-acc)}
+.rooms-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rc{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);position:relative;overflow:hidden;cursor:pointer;transition:border-color .35s,box-shadow .35s,background .35s}
+.rc.r-red{--rc:#ff3d5a;--rr:255;--rg:61;--rb:90}
+.rc.r-blue{--rc:#3d9fff;--rr:61;--rg:159;--rb:255}
+.rc.r-yellow{--rc:#ffcc44;--rr:255;--rg:204;--rb:68}
+.rc.r-green{--rc:#00d48a;--rr:0;--rg:212;--rb:138}
+.rc.on{border-color:var(--rc);background:rgba(var(--rr),var(--rg),var(--rb),.07);box-shadow:0 0 0 1px rgba(var(--rr),var(--rg),var(--rb),.55),0 0 50px rgba(var(--rr),var(--rg),var(--rb),.22),inset 0 0 60px rgba(var(--rr),var(--rg),var(--rb),.08)}
+.cdot{position:absolute;top:12px;right:12px;width:9px;height:9px;border-radius:50%;background:rgba(var(--rr),var(--rg),var(--rb),.18);border:1px solid rgba(var(--rr),var(--rg),var(--rb),.4);transition:.3s;z-index:2}
+.rc.on .cdot{background:var(--rc);border-color:var(--rc);box-shadow:0 0 7px var(--rc)}
+.room-scene{width:100%;height:130px;position:relative;overflow:hidden;background:rgba(var(--rr),var(--rg),var(--rb),.04);border-bottom:1px solid rgba(var(--rr),var(--rg),var(--rb),.12);transition:.35s}
+.rc.on .room-scene{background:rgba(var(--rr),var(--rg),var(--rb),.16);border-bottom-color:rgba(var(--rr),var(--rg),var(--rb),.35)}
+.pend{position:absolute;top:0;left:50%;transform:translateX(-50%)}
+.pw{stroke:rgba(var(--rr),var(--rg),var(--rb),.35);stroke-width:2;transition:.3s}
+.ps{fill:rgba(var(--rr),var(--rg),var(--rb),.2);stroke:rgba(var(--rr),var(--rg),var(--rb),.5);transition:.3s}
+.rc.on .pw{stroke:rgba(var(--rr),var(--rg),var(--rb),.95)}
+.rc.on .ps{fill:var(--rc);stroke:var(--rc);filter:drop-shadow(0 0 14px var(--rc))}
+.cone{position:absolute;top:38px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:65px solid transparent;border-right:65px solid transparent;border-top:90px solid rgba(var(--rr),var(--rg),var(--rb),0);transition:.4s;pointer-events:none}
+.rc.on .cone{border-top-color:rgba(var(--rr),var(--rg),var(--rb),.25)}
+.fglow{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;height:40px;background:radial-gradient(ellipse 80% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),0) 0%,transparent 100%);transition:.4s;pointer-events:none}
+.rc.on .fglow{background:radial-gradient(ellipse 80% 100% at 50% 100%,rgba(var(--rr),var(--rg),var(--rb),.35) 0%,transparent 100%)}
+.furn{position:absolute;bottom:0;left:0;width:100%;transition:.45s;filter:saturate(.18) brightness(.38)}
+.rc.on .furn{filter:saturate(1.1) brightness(1.05)}
+.rinfo{padding:12px 14px 16px;display:flex;justify-content:space-between;align-items:center}
+.rname{font-size:14px;font-weight:700}
+.rstate{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--sub);transition:.3s}
+.rc.on .rstate{color:var(--rc)}
+.tgl{position:relative;width:50px;height:26px}
+.tgl input{display:none}
+.sl{position:absolute;inset:0;border-radius:26px;cursor:pointer;background:#181828;border:1px solid #30304a;transition:.3s}
+.sl::before{content:'';position:absolute;width:19px;height:19px;top:3px;left:3px;border-radius:50%;background:#50507a;transition:.3s}
+.tgl input:checked+.sl{background:rgba(var(--rr),var(--rg),var(--rb),.25);border-color:var(--rc)}
+.tgl input:checked+.sl::before{transform:translateX(24px);background:var(--rc);box-shadow:0 0 12px var(--rc)}
+.footer-bar{grid-area:footer;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 20px}
+.fi{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.fttl{font-size:13px;font-weight:700;letter-spacing:1px;color:#d0d0e8;white-space:nowrap}
+.frooms{display:flex;gap:20px;flex:1;flex-wrap:wrap}
+.fri{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:80px}
+.fri-circle{width:46px;height:46px;border-radius:50%;border:2px solid var(--border);background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:20px;transition:.35s}
+.fri.on .fri-circle{border-color:var(--rc);background:rgba(var(--rr),var(--rg),var(--rb),.18);box-shadow:0 0 16px rgba(var(--rr),var(--rg),var(--rb),.35)}
+.fri.r-red{--rc:#ff3d5a;--rr:255;--rg:61;--rb:90}
+.fri.r-blue{--rc:#3d9fff;--rr:61;--rg:159;--rb:255}
+.fri.r-yellow{--rc:#ffcc44;--rr:255;--rg:204;--rb:68}
+.fri.r-green{--rc:#00d48a;--rr:0;--rg:212;--rb:138}
+.fri-name{font-size:10px;font-weight:600;color:var(--sub)}
+.fri-state{font-size:10px;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;color:var(--sub);transition:.3s}
+.fri.on .fri-state{color:var(--rc)}
+.fri-bar{width:46px;height:3px;background:#181828;border-radius:2px;overflow:hidden}
+.fri-bf{height:100%;width:0;background:var(--rc);border-radius:2px;transition:.4s}
+.fri.on .fri-bf{width:100%}
+.badge{margin-left:auto;background:rgba(0,255,195,.1);border:1px solid rgba(0,255,195,.35);border-radius:22px;padding:6px 18px;font-size:14px;font-weight:800;white-space:nowrap;transition:transform .15s}
+.badge.bump{transform:scale(1.12)}
+.badge span{color:var(--green-acc)}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="top-bar">
+  <div class="logo">
+    <div class="logo-box">🏠</div>
+    <span class="logo-text">NEX<span>HOME</span></span>
+  </div>
+  <div class="top-right">
+    <div class="chip chip-wifi">📶 <div class="wifi-led"></div> ESP32 Connected</div>
+    <div class="chip chip-time">🕐 <span id="clk">--:--:--</span></div>
+  </div>
+</div>
+
+<div class="left-col">
+  <div class="card">
+    <div class="card-hdr"><div class="card-ico">🌿</div><span class="card-ttl">Environment Monitor</span></div>
+    <div class="sensor-row">
+      <div class="stile temp"><span class="ico">🌡️</span><div class="lbl">Temperature</div><div class="val" id="tempVal">28.4<span class="unit">°C</span></div></div>
+      <div class="stile hum"><span class="ico">💧</span><div class="lbl">Humidity</div><div class="val" id="humVal">62<span class="unit">%</span></div></div>
+    </div>
+    <div class="brow"><span class="blbl">Temperature</span><span class="bval" style="color:#ff4466" id="tPctLbl">57%</span></div>
+    <div class="btrack"><div class="bfill t" id="tBar" style="width:57%"></div></div>
+    <div class="brow"><span class="blbl">Humidity</span><span class="bval" style="color:#3d9fff" id="hPctLbl">62%</span></div>
+    <div class="btrack"><div class="bfill h" id="hBar" style="width:62%"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><div class="card-ico">💧</div><span class="card-ttl">Humidifier Status</span></div>
+    <div class="humi-wrap">
+      <div class="humi-left humi-off" id="humiLeft">
+        <div class="mist-zone" id="mistZone" style="display:none"><div class="mp"></div><div class="mp"></div><div class="mp"></div><div class="mp"></div></div>
+        <div class="humi-svg-wrap">
+          <svg width="80" height="100" viewBox="0 0 90 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="45" cy="85" rx="34" ry="20" fill="#1a2535" stroke="#3d9bff33" stroke-width="1"/>
+            <path d="M11 68 Q11 48 45 44 Q79 48 79 68 L79 85 Q79 105 45 105 Q11 105 11 85 Z" fill="url(#hbody)" stroke="#3d9bff44" stroke-width="1.5"/>
+            <rect x="31" y="30" width="28" height="18" rx="8" fill="#1e2e42" stroke="#3d9bff44" stroke-width="1.5"/>
+            <rect x="37" y="18" width="16" height="14" rx="6" fill="#253545" stroke="#4db0ff66" stroke-width="1.5"/>
+            <ellipse cx="45" cy="18" rx="5" ry="3" fill="#0a1520"/>
+            <rect x="22" y="56" width="46" height="26" rx="7" fill="#0a1825" stroke="#3d9bff30" stroke-width="1"/>
+            <rect x="26" y="67" width="38" height="10" rx="4" fill="#0e2234"/>
+            <rect x="26" y="67" width="26" height="10" rx="4" fill="url(#wlevel)" opacity=".85"/>
+            <circle cx="45" cy="94" r="5.5" fill="#3d9bff" opacity=".85"/>
+            <circle cx="45" cy="94" r="3" fill="#80d0ff" opacity=".5"/>
+            <defs>
+              <linearGradient id="hbody" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#253a52"/><stop offset="100%" stop-color="#162030"/></linearGradient>
+              <linearGradient id="wlevel" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#3d9bff"/><stop offset="100%" stop-color="#00ffc3"/></linearGradient>
+            </defs>
+          </svg>
+        </div>
+      </div>
+      <div class="humi-right" id="humiRight">
+        <div class="hl" id="humiLbl">Standby</div>
+        <div class="hd">Humidifier turns ON<br>when humidity &lt; 30%</div>
+        <div class="row-c">
+          <label class="tsm"><input type="checkbox" id="sw-humi" onchange="humiToggle(this.checked)"><span class="slsm"></span></label>
+          <span class="tlbl">Auto Mode</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="right-col">
+  <div class="sec-ttl">Rooms &amp; Lighting Control</div>
+  <div class="rooms-grid">
+
+    <div class="rc r-red" id="card-red" onclick="cardClick('red')">
+      <div class="cdot"></div>
+      <div class="room-scene">
+        <svg class="pend" width="90" height="50" viewBox="0 0 100 55"><line class="pw" x1="50" y1="0" x2="50" y2="22"/><path class="ps" d="M30 30 Q50 42 70 30 L65 22 Q50 16 35 22 Z"/></svg>
+        <div class="cone"></div><div class="fglow"></div>
+        <svg class="furn" viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="98" width="320" height="12" fill="#1a0a14" opacity=".8"/>
+          <rect x="60" y="65" width="160" height="33" rx="10" fill="#c0304a"/>
+          <rect x="60" y="45" width="160" height="25" rx="8" fill="#d03858"/>
+          <rect x="52" y="55" width="20" height="40" rx="8" fill="#b02840"/>
+          <rect x="228" y="55" width="20" height="40" rx="8" fill="#b02840"/>
+          <rect x="72" y="50" width="60" height="45" rx="6" fill="#c83050"/>
+          <rect x="140" y="50" width="60" height="45" rx="6" fill="#c83050"/>
+          <rect x="18" y="82" width="12" height="16" rx="3" fill="#8B4513"/>
+          <ellipse cx="24" cy="78" rx="14" ry="16" fill="#1a6a1a"/>
+          <rect x="240" y="75" width="32" height="3" rx="2" fill="#5a3a2a"/>
+          <rect x="244" y="78" width="4" height="20" rx="2" fill="#4a2a1a"/>
+          <rect x="264" y="78" width="4" height="20" rx="2" fill="#4a2a1a"/>
+        </svg>
+      </div>
+      <div class="rinfo">
+        <div><div class="rname">Living Room</div><div class="rstate" id="lbl-red">LIGHT OFF</div></div>
+        <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" id="sw-red" onchange="ledToggle('red',this.checked)"><span class="sl"></span></label>
+      </div>
+    </div>
+
+    <div class="rc r-blue" id="card-blue" onclick="cardClick('blue')">
+      <div class="cdot"></div>
+      <div class="room-scene">
+        <svg class="pend" width="90" height="50" viewBox="0 0 100 55"><line class="pw" x1="50" y1="0" x2="50" y2="22"/><path class="ps" d="M30 30 Q50 42 70 30 L65 22 Q50 16 35 22 Z"/></svg>
+        <div class="cone"></div><div class="fglow"></div>
+        <svg class="furn" viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="98" width="320" height="12" fill="#050a18" opacity=".8"/>
+          <rect x="70" y="55" width="180" height="50" rx="6" fill="#1a2a4a"/>
+          <rect x="70" y="35" width="180" height="24" rx="8" fill="#223460"/>
+          <rect x="76" y="57" width="168" height="43" rx="5" fill="#e8eaf6"/>
+          <rect x="76" y="68" width="168" height="32" rx="5" fill="#3d62aa"/>
+          <rect x="82" y="57" width="58" height="16" rx="6" fill="#f0f4ff"/>
+          <rect x="178" y="57" width="58" height="16" rx="6" fill="#f0f4ff"/>
+          <rect x="22" y="72" width="38" height="28" rx="5" fill="#1a2a3a"/>
+          <rect x="26" y="76" width="30" height="18" rx="3" fill="#152030"/>
+          <circle cx="41" cy="86" r="3" fill="#3d9bff" opacity=".6"/>
+          <rect x="258" y="72" width="38" height="28" rx="5" fill="#1a2a3a"/>
+        </svg>
+      </div>
+      <div class="rinfo">
+        <div><div class="rname">Bedroom</div><div class="rstate" id="lbl-blue">LIGHT OFF</div></div>
+        <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" id="sw-blue" onchange="ledToggle('blue',this.checked)"><span class="sl"></span></label>
+      </div>
+    </div>
+
+    <div class="rc r-yellow" id="card-yellow" onclick="cardClick('yellow')">
+      <div class="cdot"></div>
+      <div class="room-scene">
+        <svg class="pend" width="90" height="50" viewBox="0 0 100 55"><line class="pw" x1="50" y1="0" x2="50" y2="22"/><path class="ps" d="M30 30 Q50 42 70 30 L65 22 Q50 16 35 22 Z"/></svg>
+        <div class="cone"></div><div class="fglow"></div>
+        <svg class="furn" viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="98" width="320" height="12" fill="#180e00" opacity=".8"/>
+          <rect x="10" y="60" width="240" height="7" rx="3" fill="#555560"/>
+          <rect x="10" y="67" width="70" height="33" rx="4" fill="#3a3a45"/>
+          <line x1="45" y1="67" x2="45" y2="100" stroke="#50505a" stroke-width="1"/>
+          <rect x="88" y="62" width="70" height="38" rx="5" fill="#2a2a35"/>
+          <rect x="90" y="64" width="50" height="32" rx="3" fill="#181822"/>
+          <rect x="145" y="64" width="11" height="32" rx="2" fill="#333340"/>
+          <rect x="168" y="26" width="78" height="74" rx="6" fill="#2e2e3a"/>
+          <rect x="170" y="28" width="74" height="34" rx="4" fill="#252530"/>
+          <rect x="170" y="64" width="74" height="34" rx="4" fill="#252530"/>
+          <rect x="52" y="48" width="9" height="14" rx="3" fill="#4a3010"/>
+          <ellipse cx="56" cy="44" rx="11" ry="11" fill="#2a6a2a"/>
+        </svg>
+      </div>
+      <div class="rinfo">
+        <div><div class="rname">Kitchen</div><div class="rstate" id="lbl-yellow">LIGHT OFF</div></div>
+        <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" id="sw-yellow" onchange="ledToggle('yellow',this.checked)"><span class="sl"></span></label>
+      </div>
+    </div>
+
+    <div class="rc r-green" id="card-green" onclick="cardClick('green')">
+      <div class="cdot"></div>
+      <div class="room-scene">
+        <svg class="pend" width="90" height="50" viewBox="0 0 100 55"><line class="pw" x1="50" y1="0" x2="50" y2="22"/><path class="ps" d="M30 30 Q50 42 70 30 L65 22 Q50 16 35 22 Z"/></svg>
+        <div class="cone"></div><div class="fglow"></div>
+        <svg class="furn" viewBox="0 0 320 110" xmlns="http://www.w3.org/2000/svg">
+          <rect x="0" y="98" width="320" height="12" fill="#051408" opacity=".8"/>
+          <rect x="85" y="62" width="150" height="9" rx="4" fill="#7a5a3a"/>
+          <rect x="90" y="71" width="6" height="27" rx="3" fill="#6a4a2a"/>
+          <rect x="224" y="71" width="6" height="27" rx="3" fill="#6a4a2a"/>
+          <rect x="44" y="66" width="28" height="24" rx="5" fill="#5a4020"/>
+          <rect x="44" y="48" width="28" height="22" rx="5" fill="#6a5030"/>
+          <rect x="246" y="66" width="28" height="24" rx="5" fill="#5a4020"/>
+          <rect x="246" y="48" width="28" height="22" rx="5" fill="#6a5030"/>
+          <ellipse cx="160" cy="66" rx="16" ry="4" fill="#e8e8e0" opacity=".7"/>
+          <rect x="270" y="74" width="10" height="24" rx="4" fill="#4a3010"/>
+          <ellipse cx="275" cy="68" rx="16" ry="18" fill="#1a6a2a"/>
+          <rect x="16" y="26" width="40" height="30" rx="4" fill="#2a2a30" stroke="#3a3a40" stroke-width="1"/>
+          <rect x="19" y="29" width="34" height="24" rx="2" fill="#181820"/>
+          <ellipse cx="36" cy="41" rx="10" ry="7" fill="#1a1a28" opacity=".8"/>
+        </svg>
+      </div>
+      <div class="rinfo">
+        <div><div class="rname">Dining Room</div><div class="rstate" id="lbl-green">LIGHT OFF</div></div>
+        <label class="tgl" onclick="event.stopPropagation()"><input type="checkbox" id="sw-green" onchange="ledToggle('green',this.checked)"><span class="sl"></span></label>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="footer-bar">
+  <div class="fi">
+    <div class="fttl">☀️ Active Lights Overview</div>
+    <div class="frooms">
+      <div class="fri r-red" id="fr-red"><div class="fri-circle">🛋️</div><div class="fri-name">Living Room</div><div class="fri-state" id="frs-red">OFF</div><div class="fri-bar"><div class="fri-bf"></div></div></div>
+      <div class="fri r-blue" id="fr-blue"><div class="fri-circle">🛏️</div><div class="fri-name">Bedroom</div><div class="fri-state" id="frs-blue">OFF</div><div class="fri-bar"><div class="fri-bf"></div></div></div>
+      <div class="fri r-yellow" id="fr-yellow"><div class="fri-circle">🍳</div><div class="fri-name">Kitchen</div><div class="fri-state" id="frs-yellow">OFF</div><div class="fri-bar"><div class="fri-bf"></div></div></div>
+      <div class="fri r-green" id="fr-green"><div class="fri-circle">🍽️</div><div class="fri-name">Dining Room</div><div class="fri-state" id="frs-green">OFF</div><div class="fri-bar"><div class="fri-bf"></div></div></div>
+    </div>
+    <div class="badge" id="badge"><span id="cnt">0</span> / 4 ON</div>
+  </div>
+</div>
+</div>
+
+<script>
+(function tick(){var d=new Date(),z=function(n){return String(n).padStart(2,'0')};document.getElementById('clk').textContent=z(d.getHours())+':'+z(d.getMinutes())+':'+z(d.getSeconds());setTimeout(tick,1000);})();
+
+function updateCount(){var n=0;['red','blue','yellow','green'].forEach(function(c){if(document.getElementById('card-'+c).classList.contains('on'))n++;});var badge=document.getElementById('badge');document.getElementById('cnt').textContent=n;badge.classList.remove('bump');void badge.offsetWidth;badge.classList.add('bump');setTimeout(function(){badge.classList.remove('bump');},200);}
+
+function applyRoom(color,on){var card=document.getElementById('card-'+color);var lbl=document.getElementById('lbl-'+color);var fri=document.getElementById('fr-'+color);var frs=document.getElementById('frs-'+color);if(on){card.classList.add('on');lbl.textContent='LIGHT ON';fri.classList.add('on');frs.textContent='ON';}else{card.classList.remove('on');lbl.textContent='LIGHT OFF';fri.classList.remove('on');frs.textContent='OFF';}updateCount();}
+
+function cardClick(color){var sw=document.getElementById('sw-'+color);sw.checked=!sw.checked;ledToggle(color,sw.checked);}
+
+function ledToggle(color, on) {
+  applyRoom(color, on); // optimistic UI update
+
+  fetch(`http://<NODE_RED_IP>:1880/led/${color}/${on ? 'on' : 'off'}`)
+    .then(res => { if (!res.ok) { applyRoom(color, !on); } })
+    .catch(() => applyRoom(color, !on)); // revert on failure
+}
+
+function humiToggle(on){var l=document.getElementById('humiLeft');var lbl=document.getElementById('humiLbl');var mist=document.getElementById('mistZone');l.className='humi-left '+(on?'humi-on':'humi-off');mist.style.display=on?'':'none';lbl.textContent=on?'Auto Mode':'Standby';lbl.style.color=on?'':'var(--sub)';}
+</script>
+</body>
+</html>
