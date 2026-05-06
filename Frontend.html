@@ -340,7 +340,7 @@ function cardClick(color){var sw=document.getElementById('sw-'+color);sw.checked
 function ledToggle(color, on) {
   applyRoom(color, on); // optimistic UI update
 
-  fetch(`http://<NODE_RED_IP>:1880/led/${color}/${on ? 'on' : 'off'}`)
+  fetch(`/led/${color}/${on ? 'on' : 'off'}`)
     .then(res => { if (!res.ok) { applyRoom(color, !on); } })
     .catch(() => applyRoom(color, !on)); // revert on failure
 }
